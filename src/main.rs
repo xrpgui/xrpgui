@@ -16,7 +16,7 @@ enum Screen {
     Welcome,
     CreateAccountFromSecretNumbers,
     CreateAccountFromMnemonic,
-    // ConfirmSecretNumbers,
+    ConfirmSecretNumbers,
     // ConfirmMnemonic,
     // ImportAccountFromSecretNumbers,
     // ImportAccountFromMnemonic,
@@ -32,6 +32,7 @@ struct App {
     screen: Screen,
     mnemonic: String,
     secret_numbers: String,
+    confirmed_secret_numbers: String,
     address: String,
 }
 
@@ -41,6 +42,7 @@ impl Default for App {
             screen: Screen::Welcome,
             mnemonic: String::new(),
             secret_numbers: String::new(),
+            confirmed_secret_numbers: String::new(),
             address: String::new(),
         }
     }
@@ -54,6 +56,7 @@ impl eframe::App for App {
                 self.create_account_from_secret_numbers_screen(ui)
             }
             Screen::CreateAccountFromMnemonic => self.create_account_from_mnemonic_screen(ui),
+            Screen::ConfirmSecretNumbers => self.confirm_secret_numbers_screen(ui),
         }
     }
 }
@@ -86,6 +89,9 @@ impl App {
                 }
                 Err(e) => self.address = format!("Error: {}", e),
             },
+            Screen::ConfirmSecretNumbers => {
+                self.confirmed_secret_numbers = String::new();
+            }
         }
     }
 
@@ -105,6 +111,22 @@ impl App {
         ui.horizontal(|ui| {
             if ui.button("Back").clicked() {
                 self.screen = Screen::Welcome;
+            }
+            if ui.button("Next").clicked() {
+                self.switch_screen(Screen::ConfirmSecretNumbers);
+            }
+        });
+    }
+
+    fn confirm_secret_numbers_screen(&mut self, ui: &mut egui::Ui) {
+        ui.add(
+            egui::TextEdit::multiline(&mut self.confirmed_secret_numbers)
+                .hint_text("123456 123456 123456 123456 123456 123456 123456 123456"),
+        );
+
+        ui.horizontal(|ui| {
+            if ui.button("Back").clicked() {
+                self.screen = Screen::CreateAccountFromSecretNumbers;
             }
             if ui.button("Next").clicked() {}
         });
