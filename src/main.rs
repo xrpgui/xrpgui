@@ -16,6 +16,16 @@ enum Screen {
     Welcome,
     CreateAccountFromSecretNumbers,
     CreateAccountFromMnemonic,
+    // ConfirmSecretNumbers,
+    // ConfirmMnemonic,
+    // ImportAccountFromSecretNumbers,
+    // ImportAccountFromMnemonic,
+    // EncryptAccount,
+    // DecryptAccount,
+    // Overview,
+    // Send,
+    // Receive,
+    // Settings,
 }
 
 struct App {
