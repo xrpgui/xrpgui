@@ -9,6 +9,18 @@ pub struct Generated {
     pub address: String,
 }
 
+pub fn validate(input: &str, original: &str) -> bool {
+    let normalized_input: String = input
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let normalized_original: String = original
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    normalized_input == normalized_original
+}
+
 pub fn generate() -> Result<Generated, String> {
     loop {
         match try_generate() {

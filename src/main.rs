@@ -3,6 +3,7 @@ mod secret_numbers;
 
 use mnemonic::generate as generate_mnemonic;
 use secret_numbers::generate as generate_secret_numbers;
+use secret_numbers::validate as validate_secret_numbers;
 
 fn main() -> eframe::Result<()> {
     eframe::run_native(
@@ -128,7 +129,13 @@ impl App {
             if ui.button("Back").clicked() {
                 self.screen = Screen::CreateAccountFromSecretNumbers;
             }
-            if ui.button("Next").clicked() {}
+            if ui.button("Next").clicked() {
+                if validate_secret_numbers(&self.confirmed_secret_numbers, &self.secret_numbers) {
+                    println!("ok");
+                } else {
+                    println!("ng");
+                }
+            }
         });
     }
 
