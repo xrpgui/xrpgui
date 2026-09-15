@@ -1,9 +1,11 @@
 mod encrypt;
 mod mnemonic;
+mod qr;
 mod secret_numbers;
 
 use encrypt::{decrypt_account, list_accounts, save_account};
 use mnemonic::generate as generate_mnemonic;
+use qr::render_qr_texture;
 use secret_numbers::generate as generate_secret_numbers;
 use secret_numbers::validate as validate_secret_numbers;
 
@@ -516,7 +518,19 @@ impl App {
                 }
             }
             Tab::Receive => {
-                ui.label("Receive");
+                ui.label("Your address:");
+                ui.add(
+                    egui::Label::new(egui::RichText::new(&self.address).monospace())
+                        .selectable(true),
+                );
+
+                ui.add_space(12.0);
+                if let Some(texture) = render_qr_texture(ui.ctx(), &self.address, 200) {
+                    ui.add(
+                        egui::Image::new(&texture)
+                            .fit_to_exact_size(egui::Vec2::splat(200.0)),
+                    );
+                }
             }
             Tab::Send => {
                 ui.label("Send");
