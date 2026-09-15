@@ -180,9 +180,7 @@ fn secret_numbers_to_seed(secret_numbers: &str) -> Result<String, String> {
     let mut entropy = [0u8; SEED_LENGTH];
     for (i, part) in parts.iter().enumerate() {
         let no = &part[..5];
-        let value: u32 = no
-            .parse::<u32>()
-            .map_err(|e| e.to_string())?;
+        let value: u32 = no.parse::<u32>().map_err(|e| e.to_string())?;
         entropy[i * 2] = (value >> 8) as u8;
         entropy[i * 2 + 1] = value as u8;
     }
@@ -198,9 +196,9 @@ fn send_payment(
     tag: &str,
 ) -> Result<String, String> {
     use xrpl::clients::json_rpc::JsonRpcClient;
-    use xrpl::models::transactions::payment::Payment;
-    use xrpl::models::transactions::Memo;
     use xrpl::models::Amount;
+    use xrpl::models::transactions::Memo;
+    use xrpl::models::transactions::payment::Payment;
     use xrpl::wallet::Wallet;
 
     let url = "https://s.altnet.rippletest.net:51234";
@@ -209,7 +207,9 @@ fn send_payment(
     let seed = secret_numbers_to_seed(secret_numbers)?;
     let wallet = Wallet::new(&seed, 0).map_err(|e| e.to_string())?;
 
-    let xrp: f64 = amount_xrp.parse().map_err(|_| "Invalid amount".to_string())?;
+    let xrp: f64 = amount_xrp
+        .parse()
+        .map_err(|_| "Invalid amount".to_string())?;
     if xrp <= 0.0 {
         return Err("Amount must be positive".to_string());
     }
@@ -420,8 +420,40 @@ impl App {
 
     fn create_account_from_secret_numbers_screen(&mut self, ui: &mut egui::Ui) {
         ui.label("Secret Numbers:");
-        ui.add(egui::Label::new(&self.secret_numbers).selectable(true));
+        let parts: Vec<&str> = self.secret_numbers.split_whitespace().collect();
+        let box_size = egui::vec2(28.0, 28.0);
+        for (i, part) in parts.iter().enumerate() {
+            let label = format!("{}", (b'A' + i as u8) as char);
+            ui.horizontal(|ui| {
+                ui.allocate_ui_with_layout(
+                    egui::vec2(20.0, box_size.y),
+                    egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                    |ui| {
+                        ui.label(egui::RichText::new(label).strong().monospace());
+                    },
+                );
+                ui.spacing_mut().item_spacing.x = 2.0;
+                for ch in part.chars() {
+                    ui.allocate_ui_with_layout(
+                        box_size,
+                        egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                        |ui| {
+                            egui::Frame::group(ui.style())
+                                .corner_radius(8)
+                                .inner_margin(egui::Margin::symmetric(0, 0))
+                                .show(ui, |ui| {
+                                    ui.set_min_size(box_size);
+                                    ui.centered_and_justified(|ui| {
+                                        ui.label(egui::RichText::new(ch.to_string()).monospace());
+                                    });
+                                });
+                        },
+                    );
+                }
+            });
+        }
 
+        ui.add_space(8.0);
         ui.label("Address:");
         ui.add(egui::Label::new(&self.address).selectable(true));
 
@@ -633,28 +665,16 @@ impl App {
             }
             Tab::Send => {
                 ui.label("Destination Address:");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.send_destination)
-                        .hint_text("r..."),
-                );
+                ui.add(egui::TextEdit::singleline(&mut self.send_destination).hint_text("r..."));
 
                 ui.label("Amount (XRP):");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.send_amount)
-                        .hint_text("e.g. 1.5"),
-                );
+                ui.add(egui::TextEdit::singleline(&mut self.send_amount).hint_text("e.g. 1.5"));
 
                 ui.label("Memo:");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.send_memo)
-                        .hint_text("Memo"),
-                );
+                ui.add(egui::TextEdit::singleline(&mut self.send_memo).hint_text("Memo"));
 
                 ui.label("Destination Tag:");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.send_tag)
-                        .hint_text("Tag (optional)"),
-                );
+                ui.add(egui::TextEdit::singleline(&mut self.send_tag).hint_text("Tag (optional)"));
 
                 ui.add_space(8.0);
                 if ui.button("Send").clicked() {
