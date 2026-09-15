@@ -44,7 +44,12 @@ struct Transaction {
     hash: String,
 }
 
-fn tx_from_json(network: &str, address: &str, tx_json: &serde_json::Value, ledger: u32) -> Transaction {
+fn tx_from_json(
+    network: &str,
+    address: &str,
+    tx_json: &serde_json::Value,
+    ledger: u32,
+) -> Transaction {
     let hash = tx_json
         .get("hash")
         .and_then(|h| h.as_str())
@@ -135,10 +140,7 @@ fn fetch_transactions(address: &str) -> Vec<Transaction> {
                 AccountTxVersionMap::Default(t) => {
                     let mut v = Vec::new();
                     for tx in &t.base.transactions {
-                        let ledger = tx
-                            .base
-                            .ledger_index
-                            .unwrap_or_default();
+                        let ledger = tx.base.ledger_index.unwrap_or_default();
                         let mut tx_json = tx.tx_json.clone().unwrap_or_default();
                         tx_json["hash"] = serde_json::Value::String(tx.hash.to_string());
                         if tx_json.get("date").is_none() {
@@ -151,10 +153,7 @@ fn fetch_transactions(address: &str) -> Vec<Transaction> {
                 AccountTxVersionMap::V1(t) => {
                     let mut v = Vec::new();
                     for tx in &t.base.transactions {
-                        let ledger = tx
-                            .base
-                            .ledger_index
-                            .unwrap_or_default();
+                        let ledger = tx.base.ledger_index.unwrap_or_default();
                         let tx_json = tx.tx.clone().unwrap_or_default();
                         v.push(tx_from_json(network, address, &tx_json, ledger));
                     }
@@ -167,6 +166,104 @@ fn fetch_transactions(address: &str) -> Vec<Transaction> {
         Err(e) => println!("Error requesting account_tx: {:?}", e),
     }
     rows
+}
+
+fn secret_numbers_to_seed(secret_numbers: &str) -> Result<String, String> {
+    use xrpl::constants::CryptoAlgorithm;
+    use xrpl::core::addresscodec::encode_seed;
+    use xrpl::core::addresscodec::utils::SEED_LENGTH;
+
+    let parts: Vec<&str> = secret_numbers.split_whitespace().collect();
+    if parts.len() != 8 {
+        return Err("Secret numbers must have 8 parts".to_string());
+    }
+    let mut entropy = [0u8; SEED_LENGTH];
+    for (i, part) in parts.iter().enumerate() {
+        let no = &part[..5];
+        let value: u32 = no
+            .parse::<u32>()
+            .map_err(|e| e.to_string())?;
+        entropy[i * 2] = (value >> 8) as u8;
+        entropy[i * 2 + 1] = value as u8;
+    }
+    encode_seed(entropy, CryptoAlgorithm::SECP256K1).map_err(|e| e.to_string())
+}
+
+fn send_payment(
+    address: &str,
+    secret_numbers: &str,
+    destination: &str,
+    amount_xrp: &str,
+    memo: &str,
+    tag: &str,
+) -> Result<String, String> {
+    use xrpl::clients::json_rpc::JsonRpcClient;
+    use xrpl::models::transactions::payment::Payment;
+    use xrpl::models::transactions::Memo;
+    use xrpl::models::Amount;
+    use xrpl::wallet::Wallet;
+
+    let url = "https://s.altnet.rippletest.net:51234";
+    let client = JsonRpcClient::connect(url.parse().expect("valid url"));
+
+    let seed = secret_numbers_to_seed(secret_numbers)?;
+    let wallet = Wallet::new(&seed, 0).map_err(|e| e.to_string())?;
+
+    let xrp: f64 = amount_xrp.parse().map_err(|_| "Invalid amount".to_string())?;
+    if xrp <= 0.0 {
+        return Err("Amount must be positive".to_string());
+    }
+    let drops = (xrp * 1_000_000.0).round() as u64;
+
+    let memo_struct = if memo.trim().is_empty() {
+        None
+    } else {
+        Some(vec![Memo::new(Some(memo.trim().to_string()), None, None)])
+    };
+
+    let tag: Option<u32> = if tag.trim().is_empty() {
+        None
+    } else {
+        Some(tag.trim().parse().map_err(|_| "Invalid tag".to_string())?)
+    };
+
+    let mut payment = Payment::new(
+        address.to_string().into(),
+        None,
+        None,
+        None,
+        None,
+        memo_struct,
+        None,
+        None,
+        None,
+        None,
+        Amount::XRPAmount(drops.to_string().into()),
+        destination.to_string().into(),
+        None,
+        tag,
+        None,
+        None,
+        None,
+    );
+
+    let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+    let result = rt.block_on(async {
+        xrpl::asynch::transaction::submit_and_wait(
+            &mut payment,
+            &client,
+            Some(&wallet),
+            Some(true),
+            Some(true),
+        )
+        .await
+        .map_err(|e| e.to_string())
+    })?;
+    let hash = match &result {
+        xrpl::models::results::tx::TxVersionMap::Default(t) => t.base.hash.to_string(),
+        xrpl::models::results::tx::TxVersionMap::V1(t) => t.base.hash.to_string(),
+    };
+    Ok(hash)
 }
 
 fn main() -> eframe::Result<()> {
@@ -221,9 +318,14 @@ struct App {
     selected_account: String,
     tab: Tab,
     address: String,
+    current_secret_numbers: String,
     transactions: Vec<Transaction>,
     tx_loaded: bool,
     selected_tx: Option<usize>,
+    send_destination: String,
+    send_amount: String,
+    send_memo: String,
+    send_tag: String,
 }
 
 impl Default for App {
@@ -241,9 +343,14 @@ impl Default for App {
             tab: Tab::Overview,
             selected_account: String::new(),
             address: String::new(),
+            current_secret_numbers: String::new(),
             transactions: Vec::new(),
             tx_loaded: false,
             selected_tx: None,
+            send_destination: String::new(),
+            send_amount: String::new(),
+            send_memo: String::new(),
+            send_tag: String::new(),
         }
     }
 }
@@ -436,9 +543,10 @@ impl App {
             }
             if ui.button("Next").clicked() {
                 match decrypt_account(&self.selected_account, &self.decrypt_password) {
-                    Ok((name, address)) => {
+                    Ok((name, address, secret_numbers)) => {
                         self.account_name = name;
                         self.address = address;
+                        self.current_secret_numbers = secret_numbers;
                         self.switch_screen(Screen::Overview);
                     }
                     Err(e) => println!("Error: {}", e),
@@ -488,10 +596,7 @@ impl App {
                                 frame
                                     .show(ui, |ui| {
                                         ui.horizontal(|ui| {
-                                            ui.label(
-                                                egui::RichText::new(&tx.date)
-                                                    .strong(),
-                                            );
+                                            ui.label(egui::RichText::new(&tx.date).strong());
                                             ui.label(
                                                 egui::RichText::new(&tx.direction)
                                                     .color(color)
@@ -503,12 +608,9 @@ impl App {
                                     .response
                                     .interact(egui::Sense::click())
                                     .clicked();
-                                if ui.interact(
-                                    ui.max_rect(),
-                                    ui.id().with(i),
-                                    egui::Sense::click(),
-                                )
-                                .clicked()
+                                if ui
+                                    .interact(ui.max_rect(), ui.id().with(i), egui::Sense::click())
+                                    .clicked()
                                 {
                                     self.selected_tx = Some(i);
                                     self.screen = Screen::TransactionDetails;
@@ -526,14 +628,54 @@ impl App {
 
                 ui.add_space(12.0);
                 if let Some(texture) = render_qr_texture(ui.ctx(), &self.address, 200) {
-                    ui.add(
-                        egui::Image::new(&texture)
-                            .fit_to_exact_size(egui::Vec2::splat(200.0)),
-                    );
+                    ui.add(egui::Image::new(&texture).fit_to_exact_size(egui::Vec2::splat(200.0)));
                 }
             }
             Tab::Send => {
-                ui.label("Send");
+                ui.label("Destination Address:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.send_destination)
+                        .hint_text("r..."),
+                );
+
+                ui.label("Amount (XRP):");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.send_amount)
+                        .hint_text("e.g. 1.5"),
+                );
+
+                ui.label("Memo:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.send_memo)
+                        .hint_text("Memo"),
+                );
+
+                ui.label("Destination Tag:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.send_tag)
+                        .hint_text("Tag (optional)"),
+                );
+
+                ui.add_space(8.0);
+                if ui.button("Send").clicked() {
+                    if self.send_destination.trim().is_empty() {
+                        println!("Destination address is empty");
+                    } else if self.send_amount.trim().is_empty() {
+                        println!("Amount is empty");
+                    } else {
+                        match send_payment(
+                            &self.address,
+                            &self.current_secret_numbers,
+                            self.send_destination.trim(),
+                            self.send_amount.trim(),
+                            &self.send_memo,
+                            &self.send_tag,
+                        ) {
+                            Ok(hash) => println!("Transaction sent. Hash: {}", hash),
+                            Err(e) => println!("Send error: {}", e),
+                        }
+                    }
+                }
             }
             Tab::Settings => {
                 ui.label("Settings");

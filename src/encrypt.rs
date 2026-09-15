@@ -83,7 +83,10 @@ pub fn list_accounts() -> Result<Vec<String>, String> {
     Ok(names)
 }
 
-pub fn decrypt_account(account_name: &str, password: &str) -> Result<(String, String), String> {
+pub fn decrypt_account(
+    account_name: &str,
+    password: &str,
+) -> Result<(String, String, String), String> {
     let path = data_dir()?.join(account_name);
     let ciphertext = std::fs::read(&path).map_err(|e| e.to_string())?;
 
@@ -98,5 +101,9 @@ pub fn decrypt_account(account_name: &str, password: &str) -> Result<(String, St
 
     let data: AccountData =
         serde_json::from_slice(&plaintext).map_err(|e| e.to_string())?;
-    Ok((data.account_name, data.address))
+    Ok((
+        data.account_name,
+        data.address,
+        data.secret_numbers,
+    ))
 }

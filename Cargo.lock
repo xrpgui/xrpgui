@@ -6632,6 +6632,7 @@ dependencies = [
  "qrcode",
  "serde",
  "serde_json",
+ "tokio",
  "url",
  "xrpl-rust",
 ]
