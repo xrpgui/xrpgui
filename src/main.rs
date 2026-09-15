@@ -1,11 +1,11 @@
+mod encrypt;
 mod mnemonic;
 mod secret_numbers;
-mod encrypt;
 
+use encrypt::save_account;
 use mnemonic::generate as generate_mnemonic;
 use secret_numbers::generate as generate_secret_numbers;
 use secret_numbers::validate as validate_secret_numbers;
-use encrypt::save_account;
 
 fn main() -> eframe::Result<()> {
     eframe::run_native(
@@ -21,11 +21,10 @@ enum Screen {
     CreateAccountFromMnemonic,
     ConfirmSecretNumbers,
     EncryptAccount,
+    DecryptAccount,
     // ConfirmMnemonic,
     // ImportAccountFromSecretNumbers,
     // ImportAccountFromMnemonic,
-    // EncryptAccount,
-    // DecryptAccount,
     // Overview,
     // Send,
     // Receive,
@@ -40,6 +39,7 @@ struct App {
     account_name: String,
     password: String,
     confirm_password: String,
+    decrypt_password: String,
     address: String,
 }
 
@@ -53,6 +53,7 @@ impl Default for App {
             account_name: String::new(),
             password: String::new(),
             confirm_password: String::new(),
+            decrypt_password: String::new(),
             address: String::new(),
         }
     }
@@ -68,6 +69,7 @@ impl eframe::App for App {
             Screen::CreateAccountFromMnemonic => self.create_account_from_mnemonic_screen(ui),
             Screen::ConfirmSecretNumbers => self.confirm_secret_numbers_screen(ui),
             Screen::EncryptAccount => self.encrypt_account_screen(ui),
+            Screen::DecryptAccount => self.decrypt_account_screen(ui),
         }
     }
 }
@@ -104,6 +106,9 @@ impl App {
                 self.confirmed_secret_numbers = String::new();
             }
             Screen::EncryptAccount => {}
+            Screen::DecryptAccount => {
+                self.decrypt_password = String::new();
+            }
         }
     }
 
@@ -177,7 +182,10 @@ impl App {
                         &self.secret_numbers,
                         &self.password,
                     ) {
-                        Ok(()) => println!("Account saved"),
+                        Ok(()) => {
+                            println!("Account saved");
+                            self.switch_screen(Screen::DecryptAccount);
+                        }
                         Err(e) => println!("Error: {}", e),
                     }
                 }
@@ -201,6 +209,25 @@ impl App {
         ui.horizontal(|ui| {
             if ui.button("Back").clicked() {
                 self.screen = Screen::Welcome;
+            }
+            if ui.button("Next").clicked() {}
+        });
+    }
+
+    fn decrypt_account_screen(&mut self, ui: &mut egui::Ui) {
+        ui.label("Account File:");
+        ui.add(egui::Label::new(&self.account_name).selectable(true));
+
+        ui.label("Password:");
+        ui.add(
+            egui::TextEdit::singleline(&mut self.decrypt_password)
+                .password(true)
+                .hint_text("Password"),
+        );
+
+        ui.horizontal(|ui| {
+            if ui.button("Back").clicked() {
+                self.screen = Screen::EncryptAccount;
             }
             if ui.button("Next").clicked() {}
         });
