@@ -2,16 +2,24 @@ mod encrypt;
 mod mnemonic;
 mod secret_numbers;
 
-use encrypt::save_account;
+use encrypt::{list_accounts, save_account};
 use mnemonic::generate as generate_mnemonic;
 use secret_numbers::generate as generate_secret_numbers;
 use secret_numbers::validate as validate_secret_numbers;
 
 fn main() -> eframe::Result<()> {
+    let mut app = App::default();
+    if let Ok(files) = list_accounts() {
+        if !files.is_empty() {
+            app.screen = Screen::DecryptAccount;
+            app.account_files = files;
+            app.selected_account = app.account_files[0].clone();
+        }
+    }
     eframe::run_native(
         "xrpgui",
         eframe::NativeOptions::default(),
-        Box::new(|_cc| Ok(Box::new(App::default()))),
+        Box::new(move |_cc| Ok(Box::new(app))),
     )
 }
 
@@ -40,6 +48,8 @@ struct App {
     password: String,
     confirm_password: String,
     decrypt_password: String,
+    account_files: Vec<String>,
+    selected_account: String,
     address: String,
 }
 
@@ -54,6 +64,8 @@ impl Default for App {
             password: String::new(),
             confirm_password: String::new(),
             decrypt_password: String::new(),
+            account_files: Vec::new(),
+            selected_account: String::new(),
             address: String::new(),
         }
     }
@@ -108,6 +120,12 @@ impl App {
             Screen::EncryptAccount => {}
             Screen::DecryptAccount => {
                 self.decrypt_password = String::new();
+                if let Ok(files) = list_accounts() {
+                    self.account_files = files;
+                }
+                if !self.account_files.is_empty() && self.selected_account.is_empty() {
+                    self.selected_account = self.account_files[0].clone();
+                }
             }
         }
     }
@@ -216,7 +234,13 @@ impl App {
 
     fn decrypt_account_screen(&mut self, ui: &mut egui::Ui) {
         ui.label("Account File:");
-        ui.add(egui::Label::new(&self.account_name).selectable(true));
+        egui::ComboBox::from_label("")
+            .selected_text(&self.selected_account)
+            .show_ui(ui, |ui| {
+                for file in &self.account_files {
+                    ui.selectable_value(&mut self.selected_account, file.clone(), file);
+                }
+            });
 
         ui.label("Password:");
         ui.add(

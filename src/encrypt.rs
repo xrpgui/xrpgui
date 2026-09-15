@@ -49,9 +49,7 @@ pub fn save_account(
         .encrypt(&nonce, plaintext.as_bytes())
         .map_err(|e| e.to_string())?;
 
-    let dir = dirs::data_dir()
-        .ok_or("cannot determine data dir")?
-        .join("xrpgui");
+    let dir = data_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
     let path = dir.join(account_name);
@@ -59,4 +57,28 @@ pub fn save_account(
 
     println!("Saved encrypted account to {}", path.display());
     Ok(())
+}
+
+fn data_dir() -> Result<std::path::PathBuf, String> {
+    Ok(dirs::data_dir()
+        .ok_or("cannot determine data dir")?
+        .join("xrpgui"))
+}
+
+pub fn list_accounts() -> Result<Vec<String>, String> {
+    let dir = data_dir()?;
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut names = Vec::new();
+    for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if entry.file_type().map_err(|e| e.to_string())?.is_file() {
+            if let Some(name) = entry.file_name().to_str() {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names.sort();
+    Ok(names)
 }
