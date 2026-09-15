@@ -2,7 +2,7 @@ mod encrypt;
 mod mnemonic;
 mod secret_numbers;
 
-use encrypt::{list_accounts, save_account};
+use encrypt::{decrypt_account, list_accounts, save_account};
 use mnemonic::generate as generate_mnemonic;
 use secret_numbers::generate as generate_secret_numbers;
 use secret_numbers::validate as validate_secret_numbers;
@@ -30,10 +30,10 @@ enum Screen {
     ConfirmSecretNumbers,
     EncryptAccount,
     DecryptAccount,
+    Overview,
     // ConfirmMnemonic,
     // ImportAccountFromSecretNumbers,
     // ImportAccountFromMnemonic,
-    // Overview,
     // Send,
     // Receive,
     // Settings,
@@ -82,6 +82,7 @@ impl eframe::App for App {
             Screen::ConfirmSecretNumbers => self.confirm_secret_numbers_screen(ui),
             Screen::EncryptAccount => self.encrypt_account_screen(ui),
             Screen::DecryptAccount => self.decrypt_account_screen(ui),
+            Screen::Overview => self.overview_screen(ui),
         }
     }
 }
@@ -127,6 +128,7 @@ impl App {
                     self.selected_account = self.account_files[0].clone();
                 }
             }
+            Screen::Overview => {}
         }
     }
 
@@ -253,7 +255,24 @@ impl App {
             if ui.button("Back").clicked() {
                 self.screen = Screen::EncryptAccount;
             }
-            if ui.button("Next").clicked() {}
+            if ui.button("Next").clicked() {
+                match decrypt_account(&self.selected_account, &self.decrypt_password) {
+                    Ok((name, address)) => {
+                        self.account_name = name;
+                        self.address = address;
+                        self.switch_screen(Screen::Overview);
+                    }
+                    Err(e) => println!("Error: {}", e),
+                }
+            }
         });
+    }
+
+    fn overview_screen(&mut self, ui: &mut egui::Ui) {
+        ui.label("Account Name:");
+        ui.add(egui::Label::new(&self.account_name).selectable(true));
+
+        ui.label("Address:");
+        ui.add(egui::Label::new(&self.address).selectable(true));
     }
 }

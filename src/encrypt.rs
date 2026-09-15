@@ -3,13 +3,13 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
 };
 use argon2::{Argon2, PasswordHasher};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Serialize)]
-struct AccountData<'a> {
-    account_name: &'a str,
-    address: &'a str,
-    secret_numbers: &'a str,
+#[derive(Serialize, Deserialize)]
+struct AccountData {
+    account_name: String,
+    address: String,
+    secret_numbers: String,
 }
 
 fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32], String> {
@@ -34,9 +34,9 @@ pub fn save_account(
     }
 
     let data = AccountData {
-        account_name,
-        address,
-        secret_numbers,
+        account_name: account_name.to_string(),
+        address: address.to_string(),
+        secret_numbers: secret_numbers.to_string(),
     };
     let plaintext = serde_json::to_string(&data).map_err(|e| e.to_string())?;
 
@@ -81,4 +81,22 @@ pub fn list_accounts() -> Result<Vec<String>, String> {
     }
     names.sort();
     Ok(names)
+}
+
+pub fn decrypt_account(account_name: &str, password: &str) -> Result<(String, String), String> {
+    let path = data_dir()?.join(account_name);
+    let ciphertext = std::fs::read(&path).map_err(|e| e.to_string())?;
+
+    let salt = [0u8; 16];
+    let key = derive_key(password, &salt)?;
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| e.to_string())?;
+    let nonce_bytes = [0u8; 12];
+    let nonce = Nonce::try_from(nonce_bytes).map_err(|e| e.to_string())?;
+    let plaintext = cipher
+        .decrypt(&nonce, ciphertext.as_ref())
+        .map_err(|_| "Failed to decrypt. Wrong password or corrupted file.".to_string())?;
+
+    let data: AccountData =
+        serde_json::from_slice(&plaintext).map_err(|e| e.to_string())?;
+    Ok((data.account_name, data.address))
 }
