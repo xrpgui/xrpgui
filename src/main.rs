@@ -18,6 +18,7 @@ enum Screen {
     CreateAccountFromSecretNumbers,
     CreateAccountFromMnemonic,
     ConfirmSecretNumbers,
+    EncryptAccount,
     // ConfirmMnemonic,
     // ImportAccountFromSecretNumbers,
     // ImportAccountFromMnemonic,
@@ -34,6 +35,9 @@ struct App {
     mnemonic: String,
     secret_numbers: String,
     confirmed_secret_numbers: String,
+    account_name: String,
+    password: String,
+    confirm_password: String,
     address: String,
 }
 
@@ -44,6 +48,9 @@ impl Default for App {
             mnemonic: String::new(),
             secret_numbers: String::new(),
             confirmed_secret_numbers: String::new(),
+            account_name: String::new(),
+            password: String::new(),
+            confirm_password: String::new(),
             address: String::new(),
         }
     }
@@ -58,6 +65,7 @@ impl eframe::App for App {
             }
             Screen::CreateAccountFromMnemonic => self.create_account_from_mnemonic_screen(ui),
             Screen::ConfirmSecretNumbers => self.confirm_secret_numbers_screen(ui),
+            Screen::EncryptAccount => self.encrypt_account_screen(ui),
         }
     }
 }
@@ -93,6 +101,7 @@ impl App {
             Screen::ConfirmSecretNumbers => {
                 self.confirmed_secret_numbers = String::new();
             }
+            Screen::EncryptAccount => {}
         }
     }
 
@@ -132,10 +141,29 @@ impl App {
             if ui.button("Next").clicked() {
                 if validate_secret_numbers(&self.confirmed_secret_numbers, &self.secret_numbers) {
                     println!("ok");
+                    self.switch_screen(Screen::EncryptAccount);
                 } else {
                     println!("ng");
                 }
             }
+        });
+    }
+
+    fn encrypt_account_screen(&mut self, ui: &mut egui::Ui) {
+        ui.label("Account Name:");
+        ui.add(egui::TextEdit::singleline(&mut self.account_name));
+
+        ui.label("Password:");
+        ui.add(egui::TextEdit::singleline(&mut self.password).password(true));
+
+        ui.label("Confirm Password:");
+        ui.add(egui::TextEdit::singleline(&mut self.confirm_password).password(true));
+
+        ui.horizontal(|ui| {
+            if ui.button("Back").clicked() {
+                self.screen = Screen::ConfirmSecretNumbers;
+            }
+            if ui.button("Next").clicked() {}
         });
     }
 
