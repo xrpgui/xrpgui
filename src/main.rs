@@ -305,8 +305,59 @@ enum Tab {
     Settings,
 }
 
+#[derive(PartialEq, Clone, Copy)]
+enum Theme {
+    AyuDark,
+    AyuLight,
+}
+
+fn apply_theme(ctx: &egui::Context, theme: Theme) {
+    let mut visuals = match theme {
+        Theme::AyuDark => egui::Visuals::dark(),
+        Theme::AyuLight => egui::Visuals::light(),
+    };
+
+    let text = match theme {
+        Theme::AyuDark => egui::Color32::from_rgb(0xd4, 0xd4, 0xd4),
+        Theme::AyuLight => egui::Color32::from_rgb(0x5c, 0x67, 0x73),
+    };
+    let bg = match theme {
+        Theme::AyuDark => egui::Color32::from_rgb(0x0f, 0x14, 0x19),
+        Theme::AyuLight => egui::Color32::from_rgb(0xfa, 0xfa, 0xfa),
+    };
+    let panel_bg = match theme {
+        Theme::AyuDark => egui::Color32::from_rgb(0x11, 0x18, 0x1f),
+        Theme::AyuLight => egui::Color32::from_rgb(0xff, 0xff, 0xff),
+    };
+    let widget_bg = match theme {
+        Theme::AyuDark => egui::Color32::from_rgb(0x17, 0x20, 0x2a),
+        Theme::AyuLight => egui::Color32::from_rgb(0xff, 0xff, 0xff),
+    };
+    let strong = match theme {
+        Theme::AyuDark => egui::Color32::from_rgb(0xf0, 0xf0, 0xf0),
+        Theme::AyuLight => egui::Color32::from_rgb(0x3a, 0x43, 0x4d),
+    };
+
+    visuals.override_text_color = Some(text);
+    visuals.panel_fill = panel_bg;
+    visuals.window_fill = panel_bg;
+    visuals.extreme_bg_color = bg;
+    visuals.faint_bg_color = widget_bg.gamma_multiply(0.5);
+    visuals.widgets.noninteractive.bg_fill = widget_bg;
+    visuals.widgets.inactive.bg_fill = widget_bg;
+    visuals.widgets.hovered.bg_fill = widget_bg;
+    visuals.widgets.active.bg_fill = widget_bg;
+    visuals.widgets.noninteractive.fg_stroke.color = text;
+    visuals.widgets.inactive.fg_stroke.color = text;
+    visuals.widgets.hovered.fg_stroke.color = strong;
+    visuals.widgets.active.fg_stroke.color = strong;
+
+    ctx.set_visuals(visuals);
+}
+
 struct App {
     screen: Screen,
+    theme: Theme,
     mnemonic: String,
     secret_numbers: String,
     confirmed_secret_numbers: String,
@@ -332,6 +383,7 @@ impl Default for App {
     fn default() -> Self {
         Self {
             screen: Screen::Welcome,
+            theme: Theme::AyuDark,
             mnemonic: String::new(),
             secret_numbers: String::new(),
             confirmed_secret_numbers: String::new(),
@@ -357,7 +409,8 @@ impl Default for App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        match self.screen {
+        apply_theme(ui.ctx(), self.theme);
+        egui::CentralPanel::default().show_inside(ui, |ui| match self.screen {
             Screen::Welcome => self.welcome_screen(ui),
             Screen::CreateAccountFromSecretNumbers => {
                 self.create_account_from_secret_numbers_screen(ui)
@@ -368,7 +421,7 @@ impl eframe::App for App {
             Screen::DecryptAccount => self.decrypt_account_screen(ui),
             Screen::Overview => self.overview_screen(ui),
             Screen::TransactionDetails => self.transaction_details_screen(ui),
-        }
+        });
     }
 }
 
@@ -421,30 +474,37 @@ impl App {
     fn create_account_from_secret_numbers_screen(&mut self, ui: &mut egui::Ui) {
         ui.label("Secret Numbers:");
         let parts: Vec<&str> = self.secret_numbers.split_whitespace().collect();
-        let box_size = egui::vec2(28.0, 28.0);
+        let box_size = egui::vec2(26.0, 26.0);
         for (i, part) in parts.iter().enumerate() {
             let label = format!("{}", (b'A' + i as u8) as char);
             ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 1.0;
                 ui.allocate_ui_with_layout(
-                    egui::vec2(20.0, box_size.y),
+                    egui::vec2(18.0, box_size.y),
                     egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
                     |ui| {
                         ui.label(egui::RichText::new(label).strong().monospace());
                     },
                 );
-                ui.spacing_mut().item_spacing.x = 2.0;
                 for ch in part.chars() {
                     ui.allocate_ui_with_layout(
                         box_size,
                         egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
                         |ui| {
-                            egui::Frame::group(ui.style())
+                            egui::Frame::new()
+                                .fill(ui.visuals().faint_bg_color)
+                                .stroke(egui::Stroke::new(
+                                    1.0,
+                                    ui.visuals().widgets.noninteractive.fg_stroke.color,
+                                ))
                                 .corner_radius(8)
-                                .inner_margin(egui::Margin::symmetric(0, 0))
                                 .show(ui, |ui| {
-                                    ui.set_min_size(box_size);
                                     ui.centered_and_justified(|ui| {
-                                        ui.label(egui::RichText::new(ch.to_string()).monospace());
+                                        ui.label(
+                                            egui::RichText::new(ch.to_string())
+                                                .monospace()
+                                                .size(14.0),
+                                        );
                                     });
                                 });
                         },
@@ -698,7 +758,11 @@ impl App {
                 }
             }
             Tab::Settings => {
-                ui.label("Settings");
+                ui.label("Theme:");
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut self.theme, Theme::AyuDark, "Ayu Dark");
+                    ui.selectable_value(&mut self.theme, Theme::AyuLight, "Ayu Light");
+                });
             }
         }
     }
