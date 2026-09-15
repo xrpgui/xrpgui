@@ -7,6 +7,166 @@ use mnemonic::generate as generate_mnemonic;
 use secret_numbers::generate as generate_secret_numbers;
 use secret_numbers::validate as validate_secret_numbers;
 
+fn xrp_amount(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => {
+            let drops: f64 = s.parse().unwrap_or(0.0);
+            format!("{:.6} XRP", drops / 1_000_000.0)
+        }
+        serde_json::Value::Object(obj) => obj
+            .get("currency")
+            .and_then(|c| c.as_str())
+            .unwrap_or("?")
+            .to_string(),
+        _ => "?".to_string(),
+    }
+}
+
+fn unix_to_iso(secs: i64) -> String {
+    let days = secs.div_euclid(86400);
+    let rem = secs.rem_euclid(86400);
+    let (h, rem2) = (rem / 3600, rem % 3600);
+    let (m, s) = (rem2 / 60, rem2 % 60);
+    format!("{}d {:02}:{:02}:{:02}", days, h, m, s)
+}
+
+struct Transaction {
+    network: String,
+    date: String,
+    direction: String,
+    amount: String,
+    tx_type: String,
+    from: String,
+    to: String,
+    ledger: String,
+    hash: String,
+}
+
+fn tx_from_json(network: &str, address: &str, tx_json: &serde_json::Value, ledger: u32) -> Transaction {
+    let hash = tx_json
+        .get("hash")
+        .and_then(|h| h.as_str())
+        .unwrap_or("")
+        .to_string();
+    let date = tx_json
+        .get("date")
+        .and_then(|d| d.as_i64())
+        .map(unix_to_iso)
+        .unwrap_or_default();
+    let ttype = tx_json
+        .get("TransactionType")
+        .and_then(|x| x.as_str())
+        .unwrap_or("?")
+        .to_string();
+    let from = tx_json
+        .get("Account")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    let to = tx_json
+        .get("Destination")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    let amount = tx_json
+        .get("Amount")
+        .or_else(|| tx_json.get("DeliverMax"))
+        .map(xrp_amount)
+        .unwrap_or_default();
+
+    let direction = if to == address {
+        "receive".to_string()
+    } else if from == address {
+        "send".to_string()
+    } else {
+        "other".to_string()
+    };
+
+    Transaction {
+        network: network.to_string(),
+        date,
+        direction,
+        amount,
+        tx_type: ttype,
+        from,
+        to,
+        ledger: ledger.to_string(),
+        hash,
+    }
+}
+
+fn fetch_transactions(address: &str) -> Vec<Transaction> {
+    use xrpl::clients::{XRPLSyncClient, json_rpc::JsonRpcClient};
+    use xrpl::models::requests::account_tx::AccountTx;
+
+    let url = "https://s.altnet.rippletest.net:51234";
+    let network = "Testnet";
+    let client = match JsonRpcClient::connect(url.parse().expect("valid url")) {
+        c => c,
+    };
+
+    let req = AccountTx::new(
+        None,
+        address.into(),
+        None,
+        None,
+        Some(false),
+        None,
+        None,
+        None,
+        Some(20),
+        None,
+    );
+
+    let mut rows = Vec::new();
+    match client.request(req.into()) {
+        Ok(resp) => {
+            use xrpl::models::results::account_tx::AccountTxVersionMap;
+            let map: AccountTxVersionMap = match resp.try_into() {
+                Ok(m) => m,
+                Err(e) => {
+                    println!("Error parsing account_tx: {:?}", e);
+                    return rows;
+                }
+            };
+            let account_tx = match &map {
+                AccountTxVersionMap::Default(t) => {
+                    let mut v = Vec::new();
+                    for tx in &t.base.transactions {
+                        let ledger = tx
+                            .base
+                            .ledger_index
+                            .unwrap_or_default();
+                        let mut tx_json = tx.tx_json.clone().unwrap_or_default();
+                        tx_json["hash"] = serde_json::Value::String(tx.hash.to_string());
+                        if tx_json.get("date").is_none() {
+                            tx_json["date"] = serde_json::Value::Null;
+                        }
+                        v.push(tx_from_json(network, address, &tx_json, ledger));
+                    }
+                    v
+                }
+                AccountTxVersionMap::V1(t) => {
+                    let mut v = Vec::new();
+                    for tx in &t.base.transactions {
+                        let ledger = tx
+                            .base
+                            .ledger_index
+                            .unwrap_or_default();
+                        let tx_json = tx.tx.clone().unwrap_or_default();
+                        v.push(tx_from_json(network, address, &tx_json, ledger));
+                    }
+                    v
+                }
+            };
+            println!("Got {} transactions for {}", account_tx.len(), address);
+            rows = account_tx;
+        }
+        Err(e) => println!("Error requesting account_tx: {:?}", e),
+    }
+    rows
+}
+
 fn main() -> eframe::Result<()> {
     let mut app = App::default();
     if let Ok(files) = list_accounts() {
@@ -31,6 +191,7 @@ enum Screen {
     EncryptAccount,
     DecryptAccount,
     Overview,
+    TransactionDetails,
     // ConfirmMnemonic,
     // ImportAccountFromSecretNumbers,
     // ImportAccountFromMnemonic,
@@ -58,6 +219,9 @@ struct App {
     selected_account: String,
     tab: Tab,
     address: String,
+    transactions: Vec<Transaction>,
+    tx_loaded: bool,
+    selected_tx: Option<usize>,
 }
 
 impl Default for App {
@@ -75,6 +239,9 @@ impl Default for App {
             tab: Tab::Overview,
             selected_account: String::new(),
             address: String::new(),
+            transactions: Vec::new(),
+            tx_loaded: false,
+            selected_tx: None,
         }
     }
 }
@@ -91,6 +258,7 @@ impl eframe::App for App {
             Screen::EncryptAccount => self.encrypt_account_screen(ui),
             Screen::DecryptAccount => self.decrypt_account_screen(ui),
             Screen::Overview => self.overview_screen(ui),
+            Screen::TransactionDetails => self.transaction_details_screen(ui),
         }
     }
 }
@@ -137,6 +305,7 @@ impl App {
                 }
             }
             Screen::Overview => {}
+            Screen::TransactionDetails => {}
         }
     }
 
@@ -291,6 +460,60 @@ impl App {
 
                 ui.label("Address:");
                 ui.add(egui::Label::new(&self.address).selectable(true));
+
+                ui.separator();
+                ui.label("Transactions:");
+                if !self.tx_loaded {
+                    self.transactions = fetch_transactions(&self.address);
+                    self.tx_loaded = true;
+                }
+                if self.transactions.is_empty() {
+                    ui.label("No transactions.");
+                } else {
+                    egui::ScrollArea::vertical()
+                        .max_height(300.0)
+                        .show(ui, |ui| {
+                            for (i, tx) in self.transactions.iter().enumerate() {
+                                let color = if tx.direction == "receive" {
+                                    egui::Color32::GREEN
+                                } else if tx.direction == "send" {
+                                    egui::Color32::RED
+                                } else {
+                                    egui::Color32::GRAY
+                                };
+                                let frame = egui::Frame::group(ui.style())
+                                    .inner_margin(egui::Margin::same(8));
+                                frame
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.label(
+                                                egui::RichText::new(&tx.date)
+                                                    .strong(),
+                                            );
+                                            ui.label(
+                                                egui::RichText::new(&tx.direction)
+                                                    .color(color)
+                                                    .strong(),
+                                            );
+                                            ui.label(egui::RichText::new(&tx.amount).strong());
+                                        });
+                                    })
+                                    .response
+                                    .interact(egui::Sense::click())
+                                    .clicked();
+                                if ui.interact(
+                                    ui.max_rect(),
+                                    ui.id().with(i),
+                                    egui::Sense::click(),
+                                )
+                                .clicked()
+                                {
+                                    self.selected_tx = Some(i);
+                                    self.screen = Screen::TransactionDetails;
+                                }
+                            }
+                        });
+                }
             }
             Tab::Receive => {
                 ui.label("Receive");
@@ -300,6 +523,62 @@ impl App {
             }
             Tab::Settings => {
                 ui.label("Settings");
+            }
+        }
+    }
+
+    fn transaction_details_screen(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui.button("Back").clicked() {
+                self.screen = Screen::Overview;
+            }
+        });
+
+        if let Some(idx) = self.selected_tx {
+            if let Some(tx) = self.transactions.get(idx) {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    egui::Grid::new("tx_details")
+                        .num_columns(2)
+                        .spacing([20.0, 8.0])
+                        .striped(true)
+                        .show(ui, |ui| {
+                            ui.label("Network");
+                            ui.label(&tx.network);
+                            ui.end_row();
+
+                            ui.label("Date");
+                            ui.label(&tx.date);
+                            ui.end_row();
+
+                            ui.label("Direction");
+                            ui.label(&tx.direction);
+                            ui.end_row();
+
+                            ui.label("Type");
+                            ui.label(&tx.tx_type);
+                            ui.end_row();
+
+                            ui.label("From");
+                            ui.add(egui::Label::new(&tx.from).selectable(true));
+                            ui.end_row();
+
+                            ui.label("To");
+                            ui.add(egui::Label::new(&tx.to).selectable(true));
+                            ui.end_row();
+
+                            ui.label("Amount");
+                            ui.label(&tx.amount);
+                            ui.end_row();
+
+                            ui.label("Ledger");
+                            ui.label(&tx.ledger);
+                            ui.end_row();
+
+                            ui.label("Hash");
+                            ui.add(egui::Label::new(&tx.hash).selectable(true));
+                            ui.end_row();
+                        });
+                });
             }
         }
     }

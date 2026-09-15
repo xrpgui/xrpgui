@@ -6622,6 +6622,7 @@ dependencies = [
  "egui",
  "serde",
  "serde_json",
+ "url",
  "xrpl-rust",
 ]
 
