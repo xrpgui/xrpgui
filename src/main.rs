@@ -1,9 +1,11 @@
 mod mnemonic;
 mod secret_numbers;
+mod encrypt;
 
 use mnemonic::generate as generate_mnemonic;
 use secret_numbers::generate as generate_secret_numbers;
 use secret_numbers::validate as validate_secret_numbers;
+use encrypt::save_account;
 
 fn main() -> eframe::Result<()> {
     eframe::run_native(
@@ -163,7 +165,23 @@ impl App {
             if ui.button("Back").clicked() {
                 self.screen = Screen::ConfirmSecretNumbers;
             }
-            if ui.button("Next").clicked() {}
+            if ui.button("Next").clicked() {
+                if self.password != self.confirm_password {
+                    println!("Passwords do not match");
+                } else if self.account_name.trim().is_empty() {
+                    println!("Account name is empty");
+                } else {
+                    match save_account(
+                        &self.account_name,
+                        &self.address,
+                        &self.secret_numbers,
+                        &self.password,
+                    ) {
+                        Ok(()) => println!("Account saved"),
+                        Err(e) => println!("Error: {}", e),
+                    }
+                }
+            }
         });
     }
 
