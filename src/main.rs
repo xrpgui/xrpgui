@@ -34,9 +34,15 @@ enum Screen {
     // ConfirmMnemonic,
     // ImportAccountFromSecretNumbers,
     // ImportAccountFromMnemonic,
-    // Send,
-    // Receive,
     // Settings,
+}
+
+#[derive(PartialEq, Clone, Copy)]
+enum Tab {
+    Overview,
+    Receive,
+    Send,
+    Settings,
 }
 
 struct App {
@@ -50,6 +56,7 @@ struct App {
     decrypt_password: String,
     account_files: Vec<String>,
     selected_account: String,
+    tab: Tab,
     address: String,
 }
 
@@ -65,6 +72,7 @@ impl Default for App {
             confirm_password: String::new(),
             decrypt_password: String::new(),
             account_files: Vec::new(),
+            tab: Tab::Overview,
             selected_account: String::new(),
             address: String::new(),
         }
@@ -269,10 +277,30 @@ impl App {
     }
 
     fn overview_screen(&mut self, ui: &mut egui::Ui) {
-        ui.label("Account Name:");
-        ui.add(egui::Label::new(&self.account_name).selectable(true));
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.tab, Tab::Overview, "Overview");
+            ui.selectable_value(&mut self.tab, Tab::Receive, "Receive");
+            ui.selectable_value(&mut self.tab, Tab::Send, "Send");
+            ui.selectable_value(&mut self.tab, Tab::Settings, "Settings");
+        });
 
-        ui.label("Address:");
-        ui.add(egui::Label::new(&self.address).selectable(true));
+        match self.tab {
+            Tab::Overview => {
+                ui.label("Account Name:");
+                ui.add(egui::Label::new(&self.account_name).selectable(true));
+
+                ui.label("Address:");
+                ui.add(egui::Label::new(&self.address).selectable(true));
+            }
+            Tab::Receive => {
+                ui.label("Receive");
+            }
+            Tab::Send => {
+                ui.label("Send");
+            }
+            Tab::Settings => {
+                ui.label("Settings");
+            }
+        }
     }
 }
